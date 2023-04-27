@@ -1,6 +1,6 @@
 data "aws_iam_policy_document" "admin-assume-role-policy" {
   statement {
-    actions = ["*"]
+    actions = ["ec2:StartInstances"]
     resources = ["*"]
   }
 }

@@ -2,6 +2,10 @@ resource "aws_vpc" "example" {
   cidr_block = var.cidr
 }
 
+resource "aws_flow_log" "test_flow_log" {
+  vpc_id = "${aws_vpc.example.id}"
+}
+
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.example.id
 
@@ -22,7 +26,7 @@ resource "aws_security_group" "allow_ssh" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["192.16.0.0/24"]
   }
 }
 

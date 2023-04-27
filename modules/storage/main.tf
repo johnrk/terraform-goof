@@ -10,6 +10,7 @@ resource "aws_db_subnet_group" "snyk_rds_subnet_grp" {
 resource "aws_security_group" "snyk_rds_sg" {
   name   = "snyk_rds_sg"
   vpc_id = var.vpc_id
+  description = "default testing security group for john kendall"
 
   tags = merge(var.default_tags, {
     Name = "snyk_rds_sg_${var.environment}"
@@ -20,7 +21,7 @@ resource "aws_security_group" "snyk_rds_sg" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["192.16.0.0/24"]
   }
 
   # outbound internet access
@@ -28,7 +29,7 @@ resource "aws_security_group" "snyk_rds_sg" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["192.168.1.0/24"]
   }
 }
 
@@ -43,9 +44,13 @@ resource "aws_kms_key" "snyk_db_kms_key" {
 }
 
 resource "aws_db_instance" "snyk_db" {
+  deletion_protection = true
+  backup_retention_period = 5
+  iam_database_authentication_enabled = true
   name                      = "snyk_db_${var.environment}"
   allocated_storage         = 20
   engine                    = "postgres"
+  multi_az                  = true
   engine_version            = "10.20"
   instance_class            = "db.t3.micro"
   storage_type              = "gp2"
@@ -102,29 +107,95 @@ resource "aws_ssm_parameter" "snyk_ssm_db_name" {
 
 resource "aws_s3_bucket" "snyk_storage" {
   bucket = "snyk-storage-${var.environment}-demo"
+    versioning {
+      enabled = true
+      mfa_delete = true
+    }
   tags = merge(var.default_tags, {
     name = "snyk_blob_storage_${var.environment}"
   })
 }
 
+resource "aws_s3_bucket_policy" "snyk_storage_policy_block_http_traffic" {
+  bucket = aws_s3_bucket.snyk_storage.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "MYBUCKETPOLICY"
+    Statement = [
+      {
+        Sid       = "IPAllow"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          "${aws_s3_bucket.snyk_storage.arn}"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
+    ]
+  })
+}
+
 resource "aws_s3_bucket" "my-new-undeployed-bucket" {
   bucket = "snyk-public-${var.environment}-demo"
+  versioning {
+    enabled = true
+    mfa_delete = true
+  }
 }
 
-resource "aws_s3_bucket_public_access_block" "snyk_public" {
+resource "aws_s3_bucket_policy" "my_new_undeployed_bucket_policy_block_http_traffic" {
   bucket = aws_s3_bucket.my-new-undeployed-bucket.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-  ignore_public_acls = var.public_ignore_acl
-  block_public_policy = var.public_policy_control
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "MYBUCKETPOLICY"
+    Statement = [
+      {
+        Sid       = "IPAllow"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          "${aws_s3_bucket.my-new-undeployed-bucket.arn}"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
+    ]
+  })
 }
+
+#resource "aws_s3_bucket_public_access_block" "snyk_public" {
+  #bucket = aws_s3_bucket.snyk_storage.id
+  #block_public_acls   = false
+  #ignore_public_acls = var.public_ignore_acl
+  #block_public_policy = var.public_policy_control
+#}
+
+#locals {
+    #buckets = [aws_s3_bucket.snyk_storage.id, aws_s3_bucket.my-new-undeployed-bucket.id]
+#}
 
 resource "aws_s3_bucket_public_access_block" "snyk_private" {
+  bucket = aws_s3_bucket.my-new-undeployed-bucket.id
+
+  restrict_public_buckets = true
+  ignore_public_acls  = true
+  block_public_acls   = true
+  block_public_policy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "snyk_private_2" {
   bucket = aws_s3_bucket.snyk_storage.id
 
+  restrict_public_buckets = true
   ignore_public_acls  = true
   block_public_acls   = true
   block_public_policy = true
